@@ -1,10 +1,24 @@
 # Log-Seismo: Real-Time Log Anomaly Detector with Alert Feed
 
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![FastAPI](https://img.shields.io/badge/FastAPI-WebSocket-009688?logo=fastapi&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-CloudWatch%20%2B%20SNS-FF9900?logo=amazonaws&logoColor=white)
+
 Watches a live log file, learns what a normal error rate looks like, and raises severity-graded, **explained** alerts the moment errors spike. Alerts stream to a React dashboard over WebSockets (with REST polling fallback) and are pushed to AWS CloudWatch Logs and SNS.
 
 Focus: **low time from anomaly to alert**. Every alert records its detection lag (error line written → alert raised), and the dashboard shows delivery latency (alert raised → on screen).
 
 ![Log-Seismo dashboard during an incident](docs/img/dashboard.png)
+
+## Quick start
+
+```bash
+pip install -r requirements.txt
+python -m scripts.demo
+```
+
+This builds the dashboard on first run (needs Node 18+), starts a fake log stream with an incident every 90 s, starts the server and opens http://localhost:8000. The detector learns normal traffic for about 30 s, and the first incident shows up at about 1.5 min. Ctrl+C stops everything.
 
 ## Results at a glance
 
@@ -15,7 +29,7 @@ Focus: **low time from anomaly to alert**. Every alert records its detection lag
 | Delivery, alert → dashboard | **≈ 5 ms** (WebSocket) |
 | Incidents caught under heavy load | **105/105** (original design: 25/105) |
 | False alarms, 3 h of normal traffic | **0** |
-| Automated tests | 11 (`pytest`) |
+| Automated tests | 23 (`pytest`) |
 
 ## Minimum requirements → where they are
 
@@ -28,7 +42,9 @@ Focus: **low time from anomaly to alert**. Every alert records its detection lag
 | Severity levels | LOW / MEDIUM / HIGH / CRITICAL at 2.5σ / 3.5σ / 5σ / 7σ, plus a RECOVERED alert |
 | Real-time frontend (WebSockets or polling) | [`frontend/src/`](frontend/src/): React, WebSocket `/ws` with automatic REST polling fallback |
 | Display alerts as they're generated | Live alert feed, incident banner, alert markers on the chart |
-| Push alerts to CloudWatch Logs or SNS | [`backend/aws_publisher.py`](backend/aws_publisher.py): **both**. Every alert goes to CloudWatch Logs; HIGH+ alerts and their recoveries go to SNS |
+| Push alerts to CloudWatch Logs or SNS | [`backend/aws_publisher.py`](backend/aws_publisher.py): **both**. Every alert goes to CloudWatch Logs; HIGH+ alerts and their recoveries go to SNS. The exact API calls are verified offline with AWS's botocore Stubber ([`tests/test_aws_publisher.py`](tests/test_aws_publisher.py)); live-account verification is in progress ([`docs/AWS_SETUP.md`](docs/AWS_SETUP.md)) |
+
+Each requirement is covered by tests: the tailer (new lines, partial lines, truncation, rotation), the engine (baseline, severity, recovery, flood control), the API and WebSocket snapshot, and the AWS calls.
 
 Beyond the minimum: explained alerts, incident grouping with recovery alerts, alert-flood control, latency measurement, a reproducible benchmark. See [`docs/WORKLOG.md`](docs/WORKLOG.md) for why each design decision was made.
 
@@ -43,12 +59,12 @@ log file (keeps growing)
 parser.py            line → {timestamp, level, message}
    ▼
 engine.py            60 s sliding window → error rate
-                     warm-up → baseline (mean, std), then EWMA updates on clearly normal ticks only
+                     warm-up → robust baseline (median, MAD), then EWMA updates on clearly normal ticks only
                      z = (rate − baseline) / std → LOW / MEDIUM / HIGH / CRITICAL
                      incidents: cooldown, escalation, recovery alert when back to normal
    ▼
 backend/app.py       FastAPI; WebSocket /ws + REST polling fallback
-   ├──► frontend/ (React)     live chart, incident banner, latency tiles, filterable alert feed
+   ├──► frontend/ (React)     status banner, KPIs, live chart, incident timeline, searchable alert table
    └──► aws_publisher.py      background queue → CloudWatch Logs (all alerts), SNS (HIGH and above)
 ```
 
@@ -65,7 +81,9 @@ Severity thresholds (standard deviations above baseline): LOW ≥ 2.5, MEDIUM �
 
 With frequent incidents the original baseline drifted upward (to ~19% error rate) and stopped seeing new incidents. "Covered" means that when the incident happened, an alert fired for it or an already-alerted incident was still open.
 
-## Run it
+## Run it step by step
+
+`python -m scripts.demo` does all of this for you. To run the pieces yourself:
 
 ```bash
 python -m venv .venv
@@ -100,10 +118,11 @@ Detection only, no web server:
 python -m detector.pipeline logs/app.log
 ```
 
-Tests and benchmark:
+Tests, benchmark and AWS check:
 ```bash
 pytest
 python -m scripts.evaluate
+python -m scripts.aws_check
 ```
 
 ## AWS setup
@@ -130,6 +149,7 @@ backend/aws_publisher.py   CloudWatch + SNS (background queue)
 frontend/src/              React dashboard (Vite)
 scripts/evaluate.py        offline detection benchmark
 scripts/aws_check.py       one-command AWS connectivity test
+scripts/demo.py            one-command demo (generator + server + browser)
 tests/                     pytest suite for the engine
 docs/ARCHITECTURE.md       diagrams + design rationale
 docs/AWS_SETUP.md          AWS console walkthrough

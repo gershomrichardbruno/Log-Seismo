@@ -78,5 +78,5 @@ python -m generator.log_generator --out logs/app.log --burst-every 45
 - **Why not ML or deep learning?** Our literature review shows DeepLog, LogAnomaly and LogBERT need training and compute, and they don't optimise alert latency. We start instantly, need no labels, and every alert is explainable. ML can be layered on later (Isolation Forest on window features).
 - **What if normal behaviour changes?** The baseline adapts continuously (EWMA) but only from calm periods. A deliberate trade-off: slow drift is learned, and incidents are not.
 - **How do you avoid alert fatigue?** Cooldown, escalation-only repeats, incident grouping, recovery alerts, and SNS only for HIGH+.
-- **How do you know it works?** 11 automated tests plus a reproducible benchmark (`python -m scripts.evaluate`).
+- **How do you know it works?** 23 automated tests plus a reproducible benchmark (`python -m scripts.evaluate`).
 - **Limitations?** It detects error-rate anomalies, not sequence or semantic ones. The benchmark is synthetic so far. Say this confidently; it shows maturity.

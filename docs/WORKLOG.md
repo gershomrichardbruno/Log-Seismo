@@ -57,7 +57,12 @@ We also tried stricter settings (z < 1.0). They caught everything but raised 11 
 - **Honest benchmark:** when incidents overlap within one window, the later one no longer gets its own alert, because the operator is already looking at an open incident. The benchmark therefore reports "covered" (a new alert, or already inside an alerted open incident) separately from "alerted".
 
 ### 2.9 Tests and benchmark
-- 11 automated tests (`pytest`), including regression tests for baseline poisoning, recovery, a burst during warm-up, and alert flooding.
+- 23 automated tests (`pytest`), including regression tests for baseline poisoning, recovery, a burst during warm-up, and alert flooding.
+- New tests prove the requirements outside the engine too:
+  - the tailer: new lines only, partial lines, truncation, rotation, a file appearing later
+  - the REST and WebSocket API
+  - the AWS publisher: the exact CloudWatch `PutLogEvents` and SNS `Publish` calls, which alerts reach SNS, and that AWS errors never stop detection. These are checked offline with AWS's own botocore Stubber.
+- `python -m scripts.demo` starts everything with one command; `python -m scripts.aws_check` checks the AWS setup.
 - `scripts/evaluate.py` is an offline benchmark reporting detection rate, time-to-detect, and false alarms.
 
 ## 3. Requirement checklist
@@ -71,7 +76,7 @@ We also tried stricter settings (z < 1.0). They caught everything but raised 11 
 | Severity levels | LOW 2.5σ, MEDIUM 3.5σ, HIGH 5σ, CRITICAL 7σ, plus recovery |
 | Real-time frontend via WebSockets or polling | React + WebSocket, with polling fallback |
 | Display alerts as generated | Live feed, banner, chart markers |
-| Push to CloudWatch Logs or SNS | Both. CloudWatch gets every alert; SNS gets HIGH and above |
+| Push to CloudWatch Logs or SNS | Both. CloudWatch gets every alert; SNS gets HIGH and above. Calls are verified offline by tests; live-account check in progress |
 
 ## 4. Known limitations (be upfront with judges)
 - Detects **error-rate** anomalies only. It does not yet catch sequence or semantic anomalies (DeepLog / LogAnomaly territory) or a drop in log volume.
