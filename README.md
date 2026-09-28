@@ -106,11 +106,13 @@ pytest
 python -m scripts.evaluate
 ```
 
-## AWS setup (optional)
+## AWS setup
 
-1. Create an SNS topic and subscribe your email to it (confirm the email).
-2. Configure credentials with `aws configure`, or use env vars. The IAM user needs `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents` and `sns:Publish`.
-3. In `.env` set `AWS_ENABLED=true` and `SNS_TOPIC_ARN=arn:aws:sns:...`.
+Step-by-step for first-timers, with console links: [`docs/AWS_SETUP.md`](docs/AWS_SETUP.md). In short:
+1. Create an SNS topic `log-seismo-alerts` in `ap-south-1` and confirm an email subscription.
+2. Create an IAM user with only `logs:CreateLogGroup/CreateLogStream/PutLogEvents` and `sns:Publish`, plus an access key.
+3. In `.env`, set `AWS_ENABLED=true`, `SNS_TOPIC_ARN`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+4. Check it with `python -m scripts.aws_check`.
 
 The log group and stream are created automatically. With `AWS_ENABLED=false`, alerts are printed as `[mock AWS]` instead.
 
@@ -127,19 +129,25 @@ backend/app.py             FastAPI, WebSocket, REST
 backend/aws_publisher.py   CloudWatch + SNS (background queue)
 frontend/src/              React dashboard (Vite)
 scripts/evaluate.py        offline detection benchmark
+scripts/aws_check.py       one-command AWS connectivity test
 tests/                     pytest suite for the engine
 docs/ARCHITECTURE.md       diagrams + design rationale
+docs/AWS_SETUP.md          AWS console walkthrough
 docs/ALERT_SCHEMA.md       message formats shared by all components
 docs/WORKLOG.md            what we changed and why, with evidence
 docs/PITCH.md              pitch script and judge Q&A
 ```
 
+## Team
+
+Hannah Bijumone (team leader) · Gershom Richard Bruno · Rithika S · Caroline Mireya Regi · Aira Salish
+
 ## Team split
 
-| | Person A: detection | Person B: delivery | Person C: evaluation |
-|---|---|---|---|
-| Owns | `generator/`, `detector/`, `tests/` | `backend/`, `frontend/`, AWS setup | `scripts/`, results, report |
-| Requirements | monitor growing log, sliding-window rate, baseline, deviation detection, severity | real-time frontend, live alert display, CloudWatch/SNS | latency + detection benchmarks, comparison with baselines |
-| Branch | `feature/detection` | `feature/dashboard` | `feature/evaluation` |
+| | Hannah: detection | Gershom: delivery + AWS | Aira: integration + evaluation | Rithika & Caroline: pitch |
+|---|---|---|---|---|
+| Owns | `generator/`, `detector/`, `tests/` | `backend/`, `frontend/`, AWS setup | `scripts/`, results, report | deck, demo video |
+| Requirements | monitor growing log, sliding-window rate, baseline, deviation detection, severity | real-time frontend, live alert display, CloudWatch/SNS | latency + detection benchmarks, comparison with baselines | presentation |
+| Branch | `feature/detection` | `feature/dashboard` | `feature/evaluation` | – |
 
-Both work against the shared contract in [`docs/ALERT_SCHEMA.md`](docs/ALERT_SCHEMA.md). See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow.
+Everyone works against the shared contract in [`docs/ALERT_SCHEMA.md`](docs/ALERT_SCHEMA.md). See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow.
