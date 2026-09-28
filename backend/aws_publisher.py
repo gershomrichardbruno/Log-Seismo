@@ -4,7 +4,9 @@ Publishing runs on its own worker thread behind a queue, so a slow AWS call
 never delays detection or the dashboard.
 
 With AWS_ENABLED=false (default) it only prints, so the project runs
-without an AWS account.
+without an AWS account. If AWS is enabled but unreachable at start-up (missing
+or wrong keys), it logs why and falls back to printing, so detection and the
+dashboard keep working.
 """
 import json
 import logging
@@ -28,9 +30,15 @@ class AlertPublisher:
             return
         import boto3
 
-        self.logs = boto3.client("logs", region_name=settings.aws_region)
-        self.sns = boto3.client("sns", region_name=settings.aws_region) if settings.sns_topic_arn else None
-        self._ensure_stream()
+        try:
+            self.logs = boto3.client("logs", region_name=settings.aws_region)
+            self.sns = boto3.client("sns", region_name=settings.aws_region) if settings.sns_topic_arn else None
+            self._ensure_stream()
+        except Exception as e:
+            self.enabled = False
+            log.error("AWS disabled: could not connect (%s: %s). Check .env, or run "
+                      "`python -m scripts.aws_check`.", type(e).__name__, e)
+            return
         threading.Thread(target=self._worker, name="aws-publisher", daemon=True).start()
 
     def _ensure_stream(self) -> None:
