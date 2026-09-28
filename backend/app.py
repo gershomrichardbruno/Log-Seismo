@@ -32,7 +32,7 @@ class Hub:
     async def push(self, kind: str, data: dict) -> None:
         (self.alerts if kind == "alert" else self.metrics).append(data)
         dead = []
-        for ws in self.clients:
+        for ws in list(self.clients):
             try:
                 await ws.send_json({"type": kind, "data": data})
             except Exception:
@@ -42,10 +42,12 @@ class Hub:
 
 
 hub = Hub()
+publisher: AlertPublisher | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global publisher
     loop = asyncio.get_running_loop()
     stop = threading.Event()
     publisher = AlertPublisher()
@@ -55,7 +57,7 @@ async def lifespan(app: FastAPI):
 
     def on_alert(a):
         d = a.to_dict()
-        log.info("ALERT %s rate=%.3f baseline=%.3f z=%.1f", d["severity"], d["error_rate"], d["baseline"], d["z_score"])
+        log.info("ALERT %s %s: %s", d["kind"], d["severity"], d["message"])
         publisher.publish(d)
         asyncio.run_coroutine_threadsafe(hub.push("alert", d), loop)
 
@@ -71,7 +73,14 @@ app = FastAPI(title="Log Anomaly Detector", lifespan=lifespan)
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "log_path": settings.log_path, "aws_enabled": settings.aws_enabled}
+    return {
+        "status": "ok",
+        "log_path": settings.log_path,
+        "aws_enabled": settings.aws_enabled,
+        "aws_sent": publisher.sent if publisher else 0,
+        "aws_failed": publisher.failed if publisher else 0,
+        "clients": len(hub.clients),
+    }
 
 
 @app.get("/api/alerts")
@@ -98,4 +107,10 @@ async def ws_endpoint(ws: WebSocket):
         hub.clients.discard(ws)
 
 
-app.mount("/", StaticFiles(directory=Path(__file__).parent.parent / "frontend", html=True), name="frontend")
+# Serve the built React app (npm run build in frontend/). In development, run `npm run dev`
+# in frontend/ instead; Vite proxies /api and /ws to this server.
+_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if _dist.is_dir():
+    app.mount("/", StaticFiles(directory=_dist, html=True), name="frontend")
+else:
+    log.warning("frontend/dist not found: run `npm install && npm run build` in frontend/ to serve the dashboard")

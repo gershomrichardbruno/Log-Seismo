@@ -21,7 +21,9 @@ class Settings:
     tick_sec: float = float(os.getenv("TICK_SEC", "1"))
     min_events: int = int(os.getenv("MIN_EVENTS", "20"))
     cooldown_sec: int = int(os.getenv("COOLDOWN_SEC", "30"))
-    ewma_alpha: float = float(os.getenv("EWMA_ALPHA", "0.05"))
+    ewma_alpha: float = float(os.getenv("EWMA_ALPHA", "0.02"))
+    adapt_max_z: float = float(os.getenv("ADAPT_MAX_Z", "2.0"))
+    recovery_ticks: int = int(os.getenv("RECOVERY_TICKS", "5"))
 
     aws_enabled: bool = _bool("AWS_ENABLED", False)
     aws_region: str = os.getenv("AWS_REGION", "ap-south-1")

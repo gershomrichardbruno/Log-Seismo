@@ -1,6 +1,8 @@
 # Real-Time Log Anomaly Detector with Alert Feed
 
-Watches a live log file, learns what a normal error rate looks like, and raises severity-graded alerts the moment errors spike. Alerts stream to a web dashboard over WebSockets and are pushed to AWS CloudWatch Logs and SNS.
+Watches a live log file, learns what a normal error rate looks like, and raises severity-graded alerts the moment errors spike. Alerts stream to a React dashboard over WebSockets (with REST polling fallback) and are pushed to AWS CloudWatch Logs and SNS.
+
+Focus: **low detection-to-alert latency**. Every alert records its detection lag (error line written → alert raised), and the dashboard shows delivery latency (alert raised → on screen).
 
 ## How it works
 
@@ -11,15 +13,27 @@ log file (keeps growing)
 parser.py            line → {timestamp, level, message}
    ▼
 engine.py            60 s sliding window → error rate
-                     warm-up → baseline (mean, std), then EWMA updates on normal ticks only
+                     warm-up → baseline (mean, std), then EWMA updates on clearly normal ticks only
                      z = (rate − baseline) / std → LOW / MEDIUM / HIGH / CRITICAL
+                     incidents: cooldown, escalation, recovery alert when back to normal
    ▼
 backend/app.py       FastAPI; WebSocket /ws + REST polling fallback
-   ├──► frontend/index.html   live chart + alert feed
-   └──► aws_publisher.py      CloudWatch Logs (all alerts), SNS (HIGH and above)
+   ├──► frontend/ (React)     live chart, incident banner, latency tiles, filterable alert feed
+   └──► aws_publisher.py      background queue → CloudWatch Logs (all alerts), SNS (HIGH and above)
 ```
 
-Severity thresholds (standard deviations above baseline): LOW ≥ 2.5, MEDIUM ≥ 3.5, HIGH ≥ 5, CRITICAL ≥ 7. A cooldown (30 s) stops repeat alerts, but an escalation always fires. The baseline only learns from normal periods, so a long incident is never accepted as the new normal.
+Severity thresholds (standard deviations above baseline): LOW ≥ 2.5, MEDIUM ≥ 3.5, HIGH ≥ 5, CRITICAL ≥ 7. A cooldown (30 s) stops repeat alerts, but an escalation always fires. After an incident, once the rate stays normal for `RECOVERY_TICKS` seconds, one recovery alert closes it. The baseline only learns from ticks with z < `ADAPT_MAX_Z` (2.0), so neither an incident nor the elevated ramp around it becomes the new normal.
+
+### Benchmark
+
+`python -m scripts.evaluate` replays synthetic traffic (3% normal errors, incidents of 12–60% for 15–30 s) through the detector, 3 seeds each:
+
+| Setting | Incident every 90 s | Incident every 50 s | False alarms, 3 h normal traffic |
+|---|---|---|---|
+| Original (α=0.05, learn below z 2.5) | 56/57, 3.7 s to detect | **15/105** | 0 |
+| Current (α=0.02, learn below z 2.0, robust warm-up) | 57/57, 3.5 s to detect | **105/105** | 0 |
+
+With frequent incidents the original baseline drifted upward (to ~19% error rate) and stopped seeing new incidents.
 
 ## Run it
 
@@ -35,20 +49,31 @@ Terminal 1, fake log traffic with an incident every 2 minutes:
 python -m generator.log_generator --out logs/app.log --burst-every 120
 ```
 
+Build the dashboard once (needs Node 18+):
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
 Terminal 2, server and dashboard:
 ```bash
 uvicorn backend.app:app --reload
 ```
 Open http://localhost:8000. The baseline takes about a minute to learn, then the first incident appears as an alert.
 
+Working on the dashboard? Run `npm run dev` in `frontend/` and open http://localhost:5173 instead. It hot-reloads and proxies `/api` and `/ws` to the server on :8000.
+
 Detection only, no web server:
 ```bash
 python -m detector.pipeline logs/app.log
 ```
 
-Tests:
+Tests and benchmark:
 ```bash
 pytest
+python -m scripts.evaluate
 ```
 
 ## AWS setup (optional)
@@ -69,18 +94,19 @@ detector/parser.py         parse log lines
 detector/engine.py         sliding window, baseline, severity
 detector/pipeline.py       glue + terminal mode
 backend/app.py             FastAPI, WebSocket, REST
-backend/aws_publisher.py   CloudWatch + SNS
-frontend/index.html        dashboard
+backend/aws_publisher.py   CloudWatch + SNS (background queue)
+frontend/src/              React dashboard (Vite)
+scripts/evaluate.py        offline detection benchmark
 tests/                     pytest suite for the engine
 docs/ALERT_SCHEMA.md       message formats shared by both halves
 ```
 
 ## Team split
 
-| | Person A: detection | Person B: delivery |
-|---|---|---|
-| Owns | `generator/`, `detector/`, `tests/` | `backend/`, `frontend/`, AWS setup |
-| Requirements | monitor growing log, sliding-window rate, baseline, deviation detection, severity | real-time frontend, live alert display, CloudWatch/SNS |
-| Branch | `feature/detection` | `feature/dashboard` |
+| | Person A: detection | Person B: delivery | Person C: evaluation |
+|---|---|---|---|
+| Owns | `generator/`, `detector/`, `tests/` | `backend/`, `frontend/`, AWS setup | `scripts/`, results, report |
+| Requirements | monitor growing log, sliding-window rate, baseline, deviation detection, severity | real-time frontend, live alert display, CloudWatch/SNS | latency + detection benchmarks, comparison with baselines |
+| Branch | `feature/detection` | `feature/dashboard` | `feature/evaluation` |
 
 Both work against the shared contract in [`docs/ALERT_SCHEMA.md`](docs/ALERT_SCHEMA.md). See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow.

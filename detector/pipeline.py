@@ -11,7 +11,7 @@ from typing import Callable, Optional
 
 from config import settings
 from .engine import AnomalyDetector, Alert, Metric
-from .parser import parse_line
+from .parser import parse_line, to_epoch
 from .tailer import follow
 
 
@@ -27,6 +27,8 @@ def run_pipeline(
         min_events=settings.min_events,
         cooldown_sec=settings.cooldown_sec,
         ewma_alpha=settings.ewma_alpha,
+        recovery_ticks=settings.recovery_ticks,
+        adapt_max_z=settings.adapt_max_z,
     )
     next_tick = time.time()
     for line in follow(path, stop_event=stop_event):
@@ -34,7 +36,7 @@ def run_pipeline(
         if line:
             parsed = parse_line(line)
             if parsed:
-                det.add(now, parsed["level"], line)
+                det.add(now, parsed["level"], line, log_ts=to_epoch(parsed["ts"]))
         if now >= next_tick:
             metric, alert = det.evaluate(now)
             on_metric(metric)
