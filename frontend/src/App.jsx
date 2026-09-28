@@ -4,13 +4,12 @@ import { useHealth } from "./hooks/useHealth.js";
 import ErrorRateChart from "./components/ErrorRateChart.jsx";
 import AlertFeed from "./components/AlertFeed.jsx";
 import IncidentPanel from "./components/IncidentPanel.jsx";
-import { Logo, IconActivity, IconCloud, IconFile, IconGauge, IconGithub, IconSend, IconZap } from "./components/Icons.jsx";
 import { clock, ms, pct, sevLabel, sevRank } from "./format.js";
 
-const CONN = {
-  live: { label: "Live", cls: "ok" },
-  poll: { label: "Polling", cls: "warn" },
-  connecting: { label: "Reconnecting", cls: "off" },
+const CONNECTION = {
+  live: "Live stream",
+  poll: "REST fallback",
+  connecting: "Reconnecting",
 };
 
 /** Group alerts (newest first) into incidents, newest incident first. */
@@ -28,12 +27,12 @@ function buildIncidents(alerts) {
   return [...byId.values()].filter((i) => i.latest).reverse();
 }
 
-function Kpi({ icon, label, value, sub, tone }) {
+function Metric({ label, value, detail, accent = "" }) {
   return (
-    <div className={`card kpi${tone ? " " + tone : ""}`}>
-      <div className="kpi-label">{icon}{label}</div>
-      <div className="kpi-value">{value}</div>
-      <div className="kpi-sub">{sub}</div>
+    <div className={`metric ${accent}`}>
+      <span className="metric-label">{label}</span>
+      <strong className="metric-value">{value}</strong>
+      <span className="metric-detail">{detail}</span>
     </div>
   );
 }
@@ -44,6 +43,7 @@ export default function App() {
   const [acked, setAcked] = useState(() => new Set());
   const last = metrics[metrics.length - 1];
   const now = last?.timestamp ?? Date.now() / 1000;
+  const windowSec = health?.window_sec ?? 60;
 
   const incidents = useMemo(() => buildIncidents(alerts), [alerts]);
   const open = incidents.find((i) => !i.resolved);
@@ -56,70 +56,85 @@ export default function App() {
   }, [alerts]);
 
   const warming = !last || last.warming_up;
-  const state = open
+  const status = open
     ? {
         cls: open.peak.toLowerCase(),
         title: `${sevLabel(open.peak)} incident in progress`,
-        text: `Error rate is ${pct(last?.error_rate)} against a normal ${pct(last?.baseline)}. ${open.alerts.length} alert${open.alerts.length > 1 ? "s" : ""} since ${clock(open.start)}.`,
+        text: `Error rate ${pct(last?.error_rate)} against a normal ${pct(last?.baseline)} · ${open.alerts.length} alert${open.alerts.length > 1 ? "s" : ""} since ${clock(open.start)}`,
       }
     : warming
       ? { cls: "learning", title: "Learning normal behaviour", text: "Collecting the first window of traffic to establish a baseline." }
-      : { cls: "ok", title: "All systems normal", text: `Error rate ${pct(last.error_rate)} is within its learned range (baseline ${pct(last.baseline)}).` };
-  const c = CONN[conn];
-  const logName = health?.log_path?.split(/[\\/]/).pop();
+      : { cls: "ok", title: "All quiet", text: `Error rate ${pct(last.error_rate)} is within its learned range (baseline ${pct(last.baseline)}).` };
+
+  const apiState = health === undefined ? "checking" : health ? "healthy" : "unavailable";
+  const awsLabel = !health ? "–" : health.aws_enabled ? `CloudWatch${health.sns_enabled ? " + SNS" : ""}` : "Off";
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <Logo />
-          <span className="brand-name">Log-Seismo</span>
-          <span className="brand-tag">Anomaly detection</span>
-        </div>
-        <div className="top-meta">
-          {logName && <span className="pill"><IconFile />{logName}</span>}
-          {health && <span className="pill"><IconActivity />{health.window_sec}s window</span>}
-          {health && (
-            <span className={`pill ${health.aws_enabled ? "ok" : "off"}`} title={health.aws_enabled ? `${health.aws_sent} sent to AWS` : "Set AWS_ENABLED=true to publish"}>
-              <IconCloud />{health.aws_enabled ? `CloudWatch${health.sns_enabled ? " + SNS" : ""}` : "AWS off"}
-            </span>
-          )}
-          <span className={`pill status ${c.cls}`}><i className="pulse" />{c.label}</span>
+    <main className="console-shell">
+      <header className="masthead">
+        <a className="brand" href="/" aria-label="Log-Seismo monitor home">
+          <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
+          <span className="brand-name">LOG<span>·</span>SEISMO</span>
+        </a>
+        <div className="masthead-meta">
+          <span className={`connection connection-${conn}`} role="status">
+            <i className="status-light" />{CONNECTION[conn]}
+          </span>
+          <span className={`api-health api-${apiState}`}>
+            <span>API</span> {apiState === "healthy" ? "Healthy" : apiState === "checking" ? "Checking" : "Unavailable"}
+          </span>
+          <span className={`aws-state ${health?.aws_enabled ? "aws-on" : ""}`}
+                title={health?.aws_enabled ? `${health.aws_sent} alerts sent to AWS` : "Set AWS_ENABLED=true in .env to publish"}>
+            <span>AWS</span> {awsLabel}
+          </span>
+          <span className="updated-at">{last ? `Updated ${clock(last.timestamp)}` : "No signal yet"}</span>
         </div>
       </header>
 
-      <main className="content">
-        <section className={`hero ${state.cls}`} role="status" aria-live="polite">
-          <div className="hero-dot" />
-          <div className="hero-text">
-            <h1>{state.title}</h1>
-            <p>{state.text}</p>
-          </div>
-        </section>
-
-        <div className="kpis">
-          <Kpi icon={<IconActivity />} label="Error rate" value={pct(last?.error_rate)}
-               sub={last ? `${last.errors} errors in ${last.total} lines` : "waiting for logs"}
-               tone={open ? open.peak.toLowerCase() : undefined} />
-          <Kpi icon={<IconGauge />} label="Baseline" value={warming ? "Learning" : pct(last.baseline)}
-               sub={warming ? "first window in progress" : `alert above ${pct(last.upper_band)}`} />
-          <Kpi icon={<IconZap />} label="Detection lag" value={ms(stats.lag)} sub="error written → alert raised" />
-          <Kpi icon={<IconSend />} label="Delivery" value={ms(stats.delivery)}
-               sub={stats.delivery == null ? "measured on the next live alert" : "alert raised → on screen"} />
+      <section className="console-intro" aria-label="Detector overview">
+        <div>
+          <p className="eyebrow intro-eyebrow">Operations / Live monitor</p>
+          <h1>Incident recorder</h1>
         </div>
+        <p className="intro-note">
+          Watching <code>{health?.log_path?.split(/[\\/]/).pop() ?? "the application log"}</code> for departures from its learned error baseline.
+        </p>
+      </section>
 
-        <div className="grid-main">
-          <ErrorRateChart metrics={metrics} alerts={alerts} />
-          <IncidentPanel incidents={incidents} now={now} />
-        </div>
+      <section className={`status-line status-${status.cls}`} role="status" aria-live="polite">
+        <i className="status-mark" />
+        <strong>{status.title}</strong>
+        <span>{status.text}</span>
+      </section>
 
-        <AlertFeed alerts={alerts} acked={acked} onAck={(id) => setAcked((p) => new Set(p).add(id))} />
-      </main>
+      <section className="metrics-strip" aria-label="Current detector metrics">
+        <Metric label="Error rate" value={pct(last?.error_rate)}
+                detail={last ? `rolling ${windowSec} sec` : "Awaiting first sample"}
+                accent={open ? `metric-${open.peak.toLowerCase()}` : "metric-primary"} />
+        <Metric label="Baseline" value={warming ? "Learning" : pct(last.baseline)}
+                detail={warming ? "Collecting normal behaviour" : `alert above ${pct(last.upper_band)}`} />
+        <Metric label="Detector state" value={warming ? "Warm-up" : open ? "Incident" : "Monitoring"}
+                detail={warming ? "Baseline not established" : open ? `#${open.id.slice(0, 8)} open` : "Baseline established"}
+                accent={warming ? "metric-warming" : open ? `metric-${open.peak.toLowerCase()}` : "metric-ready"} />
+        <Metric label="Window volume" value={last ? `${last.total.toLocaleString()} lines` : "--"}
+                detail={last ? `${last.errors.toLocaleString()} errors / ${windowSec} sec` : "No window data"} />
+        <Metric label="Detection lag" value={ms(stats.lag)} detail="error written → alert raised" />
+        <Metric label="Delivery" value={ms(stats.delivery)}
+                detail={stats.delivery == null ? "measured on the next live alert" : "alert raised → on screen"} />
+      </section>
 
-      <footer className="footer">
-        <span>Log-Seismo · sliding-window z-score detector with adaptive baseline</span>
-        <a href="https://github.com/gershomrichardbruno/Log-Seismo" target="_blank" rel="noreferrer"><IconGithub />Source</a>
+      <div className="grid-main">
+        <ErrorRateChart metrics={metrics} alerts={alerts} windowSec={windowSec} connecting={conn === "connecting"} />
+        <IncidentPanel incidents={incidents} now={now} />
+      </div>
+
+      <AlertFeed alerts={alerts} acked={acked} onAck={(id) => setAcked((p) => new Set(p).add(id))}
+                 offline={conn === "connecting" && apiState === "unavailable"} />
+
+      <footer className="console-footer">
+        <span>LOG-SEISMO / DETECTOR CONSOLE</span>
+        <a href="https://github.com/gershomrichardbruno/Log-Seismo" target="_blank" rel="noreferrer">SOURCE ON GITHUB</a>
       </footer>
-    </div>
+    </main>
   );
 }

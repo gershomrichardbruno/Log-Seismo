@@ -13,7 +13,7 @@ function AlertRow({ a, acked, onAck }) {
   const recovery = a.kind === "recovery";
   const delivery = a.receivedAt ? (a.receivedAt - a.timestamp) * 1000 : null;
   return (
-    <li className={`row${a.fresh ? " fresh" : ""}${acked ? " acked" : ""}`}>
+    <li className={`row sev-${recovery ? "ok" : a.severity.toLowerCase()}${a.fresh ? " fresh" : ""}${acked ? " acked" : ""}`}>
       <button type="button" className="row-main" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="c-sev"><SeverityBadge alert={a} /></span>
         <span className="c-time mono">{clock(a.timestamp)}</span>
@@ -56,7 +56,7 @@ const FILTERS = [
   { key: "CRITICAL", label: "Critical" },
 ];
 
-export default function AlertFeed({ alerts, acked, onAck }) {
+export default function AlertFeed({ alerts, acked, onAck, offline = false }) {
   const [min, setMin] = useState("ALL");
   const [showRecovery, setShowRecovery] = useState(true);
   const [q, setQ] = useState("");
@@ -69,11 +69,12 @@ export default function AlertFeed({ alerts, acked, onAck }) {
   const counts = Object.fromEntries(SEVERITIES.map((s) => [s, alerts.filter((a) => a.kind !== "recovery" && a.severity === s).length]));
 
   return (
-    <section className="card" aria-label="Alert feed">
-      <div className="card-head wrap">
+    <section className="feed-section" aria-label="Alert feed">
+      <div className="section-heading feed-heading">
         <div>
-          <h2>Alerts <span className="count">{alerts.length}</span></h2>
-          <p className="muted">
+          <p className="eyebrow">Response / 03</p>
+          <h2>Incident feed <span className="count">{String(alerts.length).padStart(2, "0")} recorded</span></h2>
+          <p className="muted severity-counts">
             {SEVERITIES.slice().reverse().map((s) => (
               <span key={s} className="mini-count"><i className={`dot ${s.toLowerCase()}`} />{counts[s]} {sevLabel(s)}</span>
             ))}
@@ -101,7 +102,13 @@ export default function AlertFeed({ alerts, acked, onAck }) {
       <ul className="rows">
         {shown.length === 0 && (
           <li className="empty">
-            {alerts.length ? "No alerts match these filters." : "No anomalies yet. Alerts appear here the moment the error rate breaks from its normal range."}
+            <span className="feed-state-mark" aria-hidden="true">—</span>
+            <div>
+              <strong>{offline ? "Feed paused" : alerts.length ? "No alerts match these filters" : "No incidents recorded"}</strong>
+              <p>{offline
+                ? "The API is unreachable. The feed resumes when the connection returns."
+                : alerts.length ? "Try a lower severity or clear the search." : "Severity-graded incidents appear here the moment the error rate leaves its normal range."}</p>
+            </div>
           </li>
         )}
         {shown.map((a) => <AlertRow key={a.id} a={a} acked={acked.has(a.id)} onAck={onAck} />)}

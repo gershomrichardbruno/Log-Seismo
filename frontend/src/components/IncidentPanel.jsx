@@ -9,10 +9,13 @@ export default function IncidentPanel({ incidents, now }) {
   const resolvedCount = incidents.filter((i) => i.resolved).length;
 
   return (
-    <section className="card incident-card" aria-label="Incident">
-      <div className="card-head">
-        <h2>{open ? "Active incident" : "Incidents"}</h2>
-        <span className="muted">{incidents.length} total · {resolvedCount} resolved</span>
+    <section className="panel incident-card" aria-label="Incident">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Incident / 02</p>
+          <h2>{open ? "Active incident" : "Incidents"}</h2>
+        </div>
+        <span className="muted mono">{incidents.length} total · {resolvedCount} resolved</span>
       </div>
 
       {open ? (

@@ -6,7 +6,7 @@ const RANGES = [{ label: "1m", sec: 60 }, { label: "5m", sec: 300 }];
 const PAD = { l: 48, r: 16, t: 20, b: 28 };
 
 /** Canvas chart: error-rate trace, learned normal band, alert threshold, alert markers, hover readout. */
-export default function ErrorRateChart({ metrics, alerts }) {
+export default function ErrorRateChart({ metrics, alerts, windowSec = 60, connecting = false }) {
   const canvasRef = useRef(null);
   const [span, setSpan] = useState(300);
   const [hover, setHover] = useState(null); // { x, m }
@@ -129,11 +129,11 @@ export default function ErrorRateChart({ metrics, alerts }) {
   };
 
   return (
-    <section className="card chart-card" aria-label="Error rate over time">
-      <div className="card-head">
+    <section className="panel chart-card" aria-label="Error rate over time">
+      <div className="section-heading">
         <div>
-          <h2>Error rate</h2>
-          <p className="muted">Sliding-window error rate against the learned normal range</p>
+          <p className="eyebrow">Telemetry / 01</p>
+          <h2>Error rate <span>· rolling {windowSec} s window</span></h2>
         </div>
         <div className="segmented" role="group" aria-label="Time range">
           {RANGES.map((r) => (
@@ -142,6 +142,9 @@ export default function ErrorRateChart({ metrics, alerts }) {
         </div>
       </div>
       <div className="chart-wrap">
+        {metrics.length === 0 && (
+          <div className="plot-state" role="status">{connecting ? "Connecting to the detector" : "Waiting for the first metric"}</div>
+        )}
         <canvas ref={canvasRef} onMouseMove={onMove} onMouseLeave={() => setHover(null)} />
         {hover?.m && (
           <div className="tooltip" style={{ left: Math.min(hover.x + 14, (canvasRef.current?.clientWidth || 0) - 220) }}>
@@ -161,7 +164,7 @@ export default function ErrorRateChart({ metrics, alerts }) {
         <span><i className="sw sw-line" />Error rate</span>
         <span><i className="sw sw-band" />Normal range</span>
         <span><i className="sw sw-dash" />Alert threshold</span>
-        <span><i className="sw sw-tri" />Alert</span>
+        <span><i className="sw sw-tri" />Incident marker</span>
         <span><i className="sw sw-tri ok" />Recovery</span>
       </div>
     </section>
