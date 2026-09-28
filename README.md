@@ -18,6 +18,12 @@ pip install -r requirements.txt
 python -m scripts.demo
 ```
 
+To cause an incident on cue (for a live demo), run this in a second terminal:
+```bash
+python -m scripts.incident
+```
+A HIGH alert appears within about 2 seconds and, with AWS configured, the alert email goes out.
+
 This builds the dashboard on first run (needs Node 18+), starts a fake log stream with an incident every 90 s, starts the server and opens http://localhost:8000. The detector learns normal traffic for about 30 s, and the first incident shows up at about 1.5 min. Ctrl+C stops everything.
 
 ## Results at a glance
@@ -150,6 +156,7 @@ frontend/src/              React dashboard (Vite)
 scripts/evaluate.py        offline detection benchmark
 scripts/aws_check.py       one-command AWS connectivity test
 scripts/demo.py            one-command demo (generator + server + browser)
+scripts/incident.py        inject an incident on cue for live demos
 tests/                     pytest suite for the engine
 docs/ARCHITECTURE.md       diagrams + design rationale
 docs/AWS_SETUP.md          AWS console walkthrough
