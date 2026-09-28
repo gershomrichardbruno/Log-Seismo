@@ -11,8 +11,11 @@ How it works
 5. The baseline keeps adapting (EWMA) but only from clearly normal ticks
    (z below `adapt_max_z`), so an ongoing incident, or the elevated ramp before
    and after one, does not become the "new normal".
-6. A cooldown stops repeat alerts, but an escalation (e.g. MEDIUM -> HIGH)
-   always fires.
+6. Alerts are grouped into incidents. Inside an open incident only an
+   escalation (e.g. MEDIUM -> HIGH) or a fresh spike after the rate dipped
+   back under the threshold fires (after `cooldown_sec`); a steady incident is
+   repeated at most every `renotify_sec` as a reminder. Between incidents a
+   `cooldown_sec` gap applies.
 7. Once the rate stays normal for `recovery_ticks` ticks after an incident, a
    single recovery alert (kind="recovery") closes the incident.
 """
@@ -85,6 +88,7 @@ class AnomalyDetector:
         thresholds: Optional[dict] = None,
         recovery_ticks: int = 5,
         adapt_max_z: float = 2.0,
+        renotify_sec: int = 300,
     ):
         self.window_sec = window_sec
         self.warmup_sec = warmup_sec
@@ -95,6 +99,7 @@ class AnomalyDetector:
         self.thresholds = thresholds or dict(DEFAULT_THRESHOLDS)
         self.recovery_ticks = recovery_ticks
         self.adapt_max_z = adapt_max_z
+        self.renotify_sec = renotify_sec
 
         self._events: deque = deque()  # (ts, is_error, line)
         self._errors = 0
@@ -153,7 +158,10 @@ class AnomalyDetector:
             return True
         if SEVERITIES.index(sev) > SEVERITIES.index(self._last_alert_sev):
             return True  # escalation always fires
-        return now - self._last_alert_ts >= self.cooldown_sec
+        inc = self._incident
+        steady = inc is not None and not inc["dipped"]
+        gap = self.renotify_sec if steady else self.cooldown_sec
+        return now - self._last_alert_ts >= gap
 
     # ---- main step ---------------------------------------------------------
     def evaluate(self, now: float) -> tuple[Metric, Optional[Alert]]:
@@ -185,6 +193,8 @@ class AnomalyDetector:
         z = (rate - self.mean) / self.std
         sev = self._severity(z)
         if sev is None:
+            if self._incident is not None:
+                self._incident["dipped"] = True
             if z < self.adapt_max_z:
                 self._update_baseline(rate)
             return metric(), self._maybe_recover(now, rate, total)
@@ -194,10 +204,12 @@ class AnomalyDetector:
             return metric(), None
 
         if self._incident is None:
-            self._incident = {"id": uuid.uuid4().hex[:12], "start": now, "peak": sev, "normal_ticks": 0}
+            self._incident = {"id": uuid.uuid4().hex[:12], "start": now, "peak": sev,
+                              "normal_ticks": 0, "dipped": False}
         elif SEVERITIES.index(sev) > SEVERITIES.index(self._incident["peak"]):
             self._incident["peak"] = sev
 
+        self._incident["dipped"] = False
         self._last_alert_ts, self._last_alert_sev = now, sev
         samples = [ln for _, e, ln in reversed(self._events) if e and ln][:5]
         lag = None
