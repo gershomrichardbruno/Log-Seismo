@@ -42,7 +42,7 @@ This builds the dashboard on first run (needs Node 18+), starts a fake log strea
 | Severity levels | LOW / MEDIUM / HIGH / CRITICAL at 2.5σ / 3.5σ / 5σ / 7σ, plus a RECOVERED alert |
 | Real-time frontend (WebSockets or polling) | [`frontend/src/`](frontend/src/): React, WebSocket `/ws` with automatic REST polling fallback |
 | Display alerts as they're generated | Live alert feed, incident banner, alert markers on the chart |
-| Push alerts to CloudWatch Logs or SNS | [`backend/aws_publisher.py`](backend/aws_publisher.py): **both**. Every alert goes to CloudWatch Logs; HIGH+ alerts and their recoveries go to SNS. The exact API calls are verified offline with AWS's botocore Stubber ([`tests/test_aws_publisher.py`](tests/test_aws_publisher.py)); live-account verification is in progress ([`docs/AWS_SETUP.md`](docs/AWS_SETUP.md)) |
+| Push alerts to CloudWatch Logs or SNS | [`backend/aws_publisher.py`](backend/aws_publisher.py): **both**. Every alert goes to CloudWatch Logs; HIGH+ alerts and their recoveries go to SNS. **Verified live** on 2026-09-28 against a real AWS account (ap-south-1): a full incident delivered 5/5 alerts to CloudWatch Logs and emailed HIGH, CRITICAL and RESOLVED via SNS. The exact API calls are also tested offline with AWS's botocore Stubber ([`tests/test_aws_publisher.py`](tests/test_aws_publisher.py)). Setup: [`docs/AWS_SETUP.md`](docs/AWS_SETUP.md) |
 
 Each requirement is covered by tests: the tailer (new lines, partial lines, truncation, rotation), the engine (baseline, severity, recovery, flood control), the API and WebSocket snapshot, and the AWS calls.
 

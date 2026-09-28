@@ -76,7 +76,7 @@ We also tried stricter settings (z < 1.0). They caught everything but raised 11 
 | Severity levels | LOW 2.5σ, MEDIUM 3.5σ, HIGH 5σ, CRITICAL 7σ, plus recovery |
 | Real-time frontend via WebSockets or polling | React + WebSocket, with polling fallback |
 | Display alerts as generated | Live feed, banner, chart markers |
-| Push to CloudWatch Logs or SNS | Both. CloudWatch gets every alert; SNS gets HIGH and above. Calls are verified offline by tests; live-account check in progress |
+| Push to CloudWatch Logs or SNS | Both. CloudWatch gets every alert; SNS gets HIGH and above. Verified live on 2026-09-28 (5/5 alerts to CloudWatch, SNS emails for HIGH, CRITICAL and RESOLVED), plus offline tests |
 
 ## 4. Known limitations (be upfront with judges)
 - Detects **error-rate** anomalies only. It does not yet catch sequence or semantic anomalies (DeepLog / LogAnomaly territory) or a drop in log volume.
