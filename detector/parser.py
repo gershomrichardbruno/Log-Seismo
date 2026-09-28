@@ -1,5 +1,6 @@
 """Turn a raw log line into {ts, level, msg}."""
 import re
+from datetime import datetime
 from typing import Optional
 
 LEVELS = ("DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL", "FATAL")
@@ -24,3 +25,13 @@ def parse_line(line: str) -> Optional[dict]:
     if m:
         return {"ts": None, "level": m.group(1), "msg": line}
     return None
+
+
+def to_epoch(ts: Optional[str]) -> Optional[float]:
+    """'2026-09-28 10:00:03,120' (local time) -> epoch seconds, or None if unparseable."""
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace(",", ".").replace("T", " ")).timestamp()
+    except ValueError:
+        return None

@@ -5,13 +5,19 @@ How it works
 1. Every log event goes into a time-based sliding window (default 60 s).
 2. Once per tick we compute error_rate = errors / total inside the window.
 3. Warm-up: for the first `warmup_sec` we only collect rates, then set the
-   baseline mean and std from them.
+   baseline from their median and MAD (robust to a burst during warm-up).
 4. After warm-up, z = (rate - mean) / std. A z above a threshold is an anomaly,
    and the size of z decides severity.
-5. The baseline keeps adapting (EWMA) but only from normal ticks, so an
-   ongoing incident does not become the "new normal".
-6. A cooldown stops repeat alerts, but an escalation (e.g. MEDIUM -> HIGH)
-   always fires.
+5. The baseline keeps adapting (EWMA) but only from clearly normal ticks
+   (z below `adapt_max_z`), so an ongoing incident, or the elevated ramp before
+   and after one, does not become the "new normal".
+6. Alerts are grouped into incidents. Inside an open incident only an
+   escalation (e.g. MEDIUM -> HIGH) or a fresh spike after the rate dipped
+   back under the threshold fires (after `cooldown_sec`); a steady incident is
+   repeated at most every `renotify_sec` as a reminder. Between incidents a
+   `cooldown_sec` gap applies.
+7. Once the rate stays normal for `recovery_ticks` ticks after an incident, a
+   single recovery alert (kind="recovery") closes the incident.
 """
 from __future__ import annotations
 
@@ -50,9 +56,11 @@ class Metric:
 @dataclass
 class Alert:
     id: str
+    kind: str  # "anomaly" or "recovery"
     timestamp: float
     timestamp_iso: str
-    severity: str
+    severity: str  # for a recovery: the peak severity of the incident it closes
+    message: str
     error_rate: float
     baseline: float
     baseline_std: float
@@ -61,6 +69,8 @@ class Alert:
     total: int
     window_sec: int
     sample_lines: list
+    detection_lag_ms: Optional[float] = None  # newest error line written -> alert raised
+    incident_id: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -73,9 +83,12 @@ class AnomalyDetector:
         warmup_sec: int = 60,
         min_events: int = 20,
         cooldown_sec: int = 30,
-        ewma_alpha: float = 0.05,
+        ewma_alpha: float = 0.02,
         std_floor: float = 0.01,
         thresholds: Optional[dict] = None,
+        recovery_ticks: int = 5,
+        adapt_max_z: float = 2.0,
+        renotify_sec: int = 300,
     ):
         self.window_sec = window_sec
         self.warmup_sec = warmup_sec
@@ -84,6 +97,9 @@ class AnomalyDetector:
         self.alpha = ewma_alpha
         self.std_floor = std_floor
         self.thresholds = thresholds or dict(DEFAULT_THRESHOLDS)
+        self.recovery_ticks = recovery_ticks
+        self.adapt_max_z = adapt_max_z
+        self.renotify_sec = renotify_sec
 
         self._events: deque = deque()  # (ts, is_error, line)
         self._errors = 0
@@ -93,15 +109,20 @@ class AnomalyDetector:
         self.var: Optional[float] = None
         self._last_alert_ts: Optional[float] = None
         self._last_alert_sev: Optional[str] = None
+        self._last_error_log_ts: Optional[float] = None
+        # open incident: id, start time, peak severity, consecutive normal ticks
+        self._incident: Optional[dict] = None
 
     # ---- input -------------------------------------------------------------
-    def add(self, ts: float, level: str, line: str = "") -> None:
+    def add(self, ts: float, level: str, line: str = "", log_ts: Optional[float] = None) -> None:
+        """`ts` is when the line was seen; `log_ts` is the timestamp written in the line, if known."""
         if self._first_ts is None:
             self._first_ts = ts
         is_err = level.upper() in ERROR_LEVELS
         self._events.append((ts, is_err, line))
         if is_err:
             self._errors += 1
+            self._last_error_log_ts = log_ts if log_ts is not None else ts
 
     # ---- state -------------------------------------------------------------
     @property
@@ -137,7 +158,10 @@ class AnomalyDetector:
             return True
         if SEVERITIES.index(sev) > SEVERITIES.index(self._last_alert_sev):
             return True  # escalation always fires
-        return now - self._last_alert_ts >= self.cooldown_sec
+        inc = self._incident
+        steady = inc is not None and not inc["dipped"]
+        gap = self.renotify_sec if steady else self.cooldown_sec
+        return now - self._last_alert_ts >= gap
 
     # ---- main step ---------------------------------------------------------
     def evaluate(self, now: float) -> tuple[Metric, Optional[Alert]]:
@@ -158,25 +182,50 @@ class AnomalyDetector:
             self._warmup_rates.append(rate)
             elapsed = now - self._first_ts if self._first_ts is not None else 0.0
             if elapsed >= self.warmup_sec and len(self._warmup_rates) >= 5:
-                self.mean = statistics.fmean(self._warmup_rates)
-                self.var = statistics.pvariance(self._warmup_rates)
+                # Median + MAD rather than mean + variance, so an incident that happens
+                # to overlap warm-up does not become the learned "normal".
+                med = statistics.median(self._warmup_rates)
+                mad = statistics.median(abs(r - med) for r in self._warmup_rates)
+                self.mean = med
+                self.var = (1.4826 * mad) ** 2
             return metric(), None
 
         z = (rate - self.mean) / self.std
         sev = self._severity(z)
         if sev is None:
-            self._update_baseline(rate)
-            return metric(), None
+            if self._incident is not None:
+                self._incident["dipped"] = True
+            if z < self.adapt_max_z:
+                self._update_baseline(rate)
+            return metric(), self._maybe_recover(now, rate, total)
+        if self._incident is not None:
+            self._incident["normal_ticks"] = 0
         if not self._should_fire(now, sev):
             return metric(), None
 
+        if self._incident is None:
+            self._incident = {"id": uuid.uuid4().hex[:12], "start": now, "peak": sev,
+                              "normal_ticks": 0, "dipped": False}
+        elif SEVERITIES.index(sev) > SEVERITIES.index(self._incident["peak"]):
+            self._incident["peak"] = sev
+
+        self._incident["dipped"] = False
         self._last_alert_ts, self._last_alert_sev = now, sev
         samples = [ln for _, e, ln in reversed(self._events) if e and ln][:5]
+        lag = None
+        if self._last_error_log_ts is not None:
+            lag = round(max(0.0, now - self._last_error_log_ts) * 1000, 1)
         alert = Alert(
             id=uuid.uuid4().hex[:12],
+            kind="anomaly",
             timestamp=now,
             timestamp_iso=_iso(now),
             severity=sev,
+            message=(
+                f"Error rate {rate:.1%} vs normal {self.mean:.1%} "
+                f"({self._errors} errors in {total} lines over the last {self.window_sec}s, "
+                f"{z:.1f} std devs above baseline)"
+            ),
             error_rate=round(rate, 4),
             baseline=round(self.mean, 4),
             baseline_std=round(self.std, 4),
@@ -185,5 +234,38 @@ class AnomalyDetector:
             total=total,
             window_sec=self.window_sec,
             sample_lines=samples,
+            detection_lag_ms=lag,
+            incident_id=self._incident["id"],
         )
         return metric(), alert
+
+    def _maybe_recover(self, now: float, rate: float, total: int) -> Optional[Alert]:
+        inc = self._incident
+        if inc is None:
+            return None
+        inc["normal_ticks"] += 1
+        if inc["normal_ticks"] < self.recovery_ticks:
+            return None
+        self._incident = None
+        self._last_alert_ts = self._last_alert_sev = None
+        duration = now - inc["start"]
+        return Alert(
+            id=uuid.uuid4().hex[:12],
+            kind="recovery",
+            timestamp=now,
+            timestamp_iso=_iso(now),
+            severity=inc["peak"],
+            message=(
+                f"Recovered: error rate back to {rate:.1%} (normal {self.mean:.1%}) "
+                f"after a {inc['peak']} incident lasting {duration:.0f}s"
+            ),
+            error_rate=round(rate, 4),
+            baseline=round(self.mean, 4),
+            baseline_std=round(self.std, 4),
+            z_score=round((rate - self.mean) / self.std, 2),
+            errors=self._errors,
+            total=total,
+            window_sec=self.window_sec,
+            sample_lines=[],
+            incident_id=inc["id"],
+        )
