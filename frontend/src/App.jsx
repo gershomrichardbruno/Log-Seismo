@@ -51,7 +51,7 @@ export default function App() {
       <dl className="tiles">
         <div><dt>Anomalies</dt><dd>{stats.count}</dd></div>
         <div><dt>Avg detection lag</dt><dd>{ms(stats.lag)}</dd><small>error line written → alert raised</small></div>
-        <div><dt>Avg delivery</dt><dd>{ms(stats.delivery)}</dd><small>alert raised → on this screen</small></div>
+        <div><dt>Avg delivery</dt><dd>{ms(stats.delivery)}</dd><small>alert raised → on this screen{stats.delivery == null ? " (next live alert)" : ""}</small></div>
         <div><dt>Events in window</dt><dd>{last ? `${last.errors} / ${last.total}` : "–"}</dd><small>errors / lines</small></div>
       </dl>
 

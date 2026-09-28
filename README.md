@@ -34,6 +34,8 @@ Beyond the minimum: explained alerts, incident grouping with recovery alerts, al
 
 ## How it works
 
+Full diagrams and design rationale: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ```
 log file (keeps growing)
    │  tailer.py      follows new lines, survives rotation/truncation
@@ -126,7 +128,10 @@ backend/aws_publisher.py   CloudWatch + SNS (background queue)
 frontend/src/              React dashboard (Vite)
 scripts/evaluate.py        offline detection benchmark
 tests/                     pytest suite for the engine
-docs/ALERT_SCHEMA.md       message formats shared by both halves
+docs/ARCHITECTURE.md       diagrams + design rationale
+docs/ALERT_SCHEMA.md       message formats shared by all components
+docs/WORKLOG.md            what we changed and why, with evidence
+docs/PITCH.md              pitch script and judge Q&A
 ```
 
 ## Team split
