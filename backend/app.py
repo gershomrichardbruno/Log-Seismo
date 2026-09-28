@@ -80,6 +80,9 @@ def health():
         "aws_sent": publisher.sent if publisher else 0,
         "aws_failed": publisher.failed if publisher else 0,
         "clients": len(hub.clients),
+        "window_sec": settings.window_sec,
+        "sns_enabled": bool(settings.aws_enabled and settings.sns_topic_arn),
+        "sns_min_severity": settings.sns_min_severity,
     }
 
 

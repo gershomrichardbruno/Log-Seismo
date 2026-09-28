@@ -1,18 +1,18 @@
-# Working on this repo (3 people)
+# Working on this repo
 
 ## Who owns what
-- **Person A (detection):** `generator/`, `detector/`, `tests/`
-- **Person B (delivery):** `backend/`, `frontend/`, AWS account and `.env` setup
-- **Person C (evaluation):** `scripts/`, benchmark results, report
+- **Hannah (detection):** `generator/`, `detector/`, `tests/`
+- **Gershom (delivery):** `backend/`, `frontend/`, AWS account and `.env` setup
+- **Aira (integration + evaluation):** `scripts/`, benchmark results, report
 - Shared, change together: `config.py`, `docs/ALERT_SCHEMA.md`, `README.md`
 
 ## Workflow
 1. Never commit directly to `main`.
 2. Work on your branch:
    ```bash
-   git checkout -b feature/detection    # Person A
-   git checkout -b feature/dashboard    # Person B
-   git checkout -b feature/evaluation   # Person C
+   git checkout -b feature/detection    # Hannah
+   git checkout -b feature/dashboard    # Gershom
+   git checkout -b feature/evaluation   # Aira
    ```
 3. Commit small and often, then push: `git push -u origin <branch>`
 4. Open a pull request into `main`. Someone else reviews and merges.
