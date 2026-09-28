@@ -42,8 +42,8 @@ Gap against the brief: the frontend was plain HTML, and the brief lists **React*
 
 | Setting | Incident every 90 s | Incident every 50 s | False alarms, 3 h normal |
 |---|---|---|---|
-| Original | 56/57 | **15/105** | 0 |
-| Fixed | 57/57 | **105/105** | 0 |
+| Original | 56/57 | **25/105** covered | 0 |
+| Fixed | 57/57 | **105/105** covered | 0 |
 
 We also tried stricter settings (z < 1.0). They caught everything but raised 11 false alarms in 5 hours, so we chose z < 2.0 as the balance.
 
@@ -51,8 +51,13 @@ We also tried stricter settings (z < 1.0). They caught everything but raised 11 
 - **Observed:** when the server started during an incident, the baseline was learned as 42%.
 - **Fix:** the warm-up baseline now uses **median and MAD** (median absolute deviation) instead of mean and variance. A short burst during warm-up no longer skews it.
 
-### 2.8 Tests and benchmark
-- 10 automated tests (`pytest`), including regression tests for baseline poisoning, recovery, and a burst during warm-up.
+### 2.8 No alert flood during long incidents
+- **Observed:** a 25-minute live run produced **181 alerts**. A long incident repeated its alert every cooldown period, which is exactly the alert fatigue we set out to avoid.
+- **Fix:** inside an open incident, a new alert fires only on **escalation** (e.g. HIGH → CRITICAL) or a **fresh spike** after the rate dipped under the threshold. A steady incident re-notifies at most every 5 minutes (`RENOTIFY_SEC`).
+- **Honest benchmark:** when incidents overlap within one window, the later one no longer gets its own alert, because the operator is already looking at an open incident. The benchmark therefore reports "covered" (a new alert, or already inside an alerted open incident) separately from "alerted".
+
+### 2.9 Tests and benchmark
+- 11 automated tests (`pytest`), including regression tests for baseline poisoning, recovery, a burst during warm-up, and alert flooding.
 - `scripts/evaluate.py` is an offline benchmark reporting detection rate, time-to-detect, and false alarms.
 
 ## 3. Requirement checklist

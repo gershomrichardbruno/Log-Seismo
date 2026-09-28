@@ -98,8 +98,8 @@ def test_frequent_incidents_do_not_poison_baseline():
     # Incidents every 50 s used to drag the baseline up until later ones went unseen.
     from scripts.evaluate import simulate
     incidents, false_alarms = simulate(alpha=0.02, adapt_z=2.0, every=50, seed=0, duration=1200)
-    detected = sum(i[2] is not None for i in incidents)
-    assert detected >= 0.9 * len(incidents)
+    covered = sum(i[3] for i in incidents)
+    assert covered >= 0.9 * len(incidents)
     assert false_alarms == 0
 
 
@@ -110,3 +110,12 @@ def test_warmup_ignores_short_burst():
     feed(det, 26, 10, 20, err_every=25)  # normal again, warm-up ends
     assert not det.warming_up
     assert det.mean < 0.1
+
+
+def test_long_incident_does_not_spam():
+    det = make()  # cooldown 5 s
+    feed(det, 0, 40, 20, err_every=25)
+    alerts = feed(det, 40, 120, 20, err_every=2)  # 2-minute incident at a steady level
+    # escalations only (at most one per severity), no repeat every cooldown
+    assert len(alerts) <= 4
+    assert len({a.incident_id for a in alerts}) == 1

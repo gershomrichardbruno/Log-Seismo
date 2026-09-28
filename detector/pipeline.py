@@ -29,6 +29,7 @@ def run_pipeline(
         ewma_alpha=settings.ewma_alpha,
         recovery_ticks=settings.recovery_ticks,
         adapt_max_z=settings.adapt_max_z,
+        renotify_sec=settings.renotify_sec,
     )
     next_tick = time.time()
     for line in follow(path, stop_event=stop_event):

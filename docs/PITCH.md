@@ -29,7 +29,7 @@ growing log → sliding window → adaptive baseline → z-score severity
 ## Slide 4: How it works (the three clever bits)
 1. **Learns normal automatically.** A robust warm-up (median/MAD) is followed by a slowly adapting baseline.
 2. **Refuses to learn from trouble.** The baseline only updates on clearly normal periods, so an incident never becomes the "new normal".
-3. **Thinks in incidents, not alert spam.** A cooldown suppresses repeats, escalation always gets through, and one recovery alert closes the incident.
+3. **Thinks in incidents, not alert spam.** A steady incident alerts once; only escalations or fresh spikes raise new alerts, and one recovery alert closes the incident.
 
 Severity: LOW / MEDIUM / HIGH / CRITICAL = 2.5σ / 3.5σ / 5σ / 7σ above normal. SNS pages people only for HIGH and above.
 
@@ -42,10 +42,10 @@ See the demo script below.
 | Time to detect an incident (benchmark mean) | **≈ 3.5 s** |
 | Detection lag, error line written → alert (live) | **< 1 s** |
 | Delivery, alert → dashboard | **single-digit ms** (WebSocket) |
-| Incidents detected, heavy load (every 50 s) | **105/105** (the naive version: 15/105) |
+| Incidents caught, heavy load (every 50 s) | **105/105** (the textbook version: 25/105) |
 | False alarms, 3 h of normal traffic | **0** |
 
-> Story to tell: *"While testing we found the textbook approach quietly breaks. With frequent incidents, its idea of 'normal' drifted from 3% to 19% errors and it stopped seeing new incidents. We fixed it by gating what the baseline learns from. That took detection from 15 of 105 incidents to 105 of 105 with zero false alarms."* (Judges like a found-and-fixed bug backed by numbers.)
+> Story to tell: *"While testing we found the textbook approach quietly breaks. With frequent incidents, its idea of 'normal' drifted from 3% to 19% errors and it stopped seeing new incidents. We fixed it by gating what the baseline learns from. That took us from catching 25 of 105 incidents to 105 of 105 with zero false alarms."* (Judges like a found-and-fixed bug backed by numbers.)
 
 ## Slide 7: What's next
 - More signals: log-volume drops (a silent service), brand-new error signatures.
@@ -78,5 +78,5 @@ python -m generator.log_generator --out logs/app.log --burst-every 45
 - **Why not ML or deep learning?** Our literature review shows DeepLog, LogAnomaly and LogBERT need training and compute, and they don't optimise alert latency. We start instantly, need no labels, and every alert is explainable. ML can be layered on later (Isolation Forest on window features).
 - **What if normal behaviour changes?** The baseline adapts continuously (EWMA) but only from calm periods. A deliberate trade-off: slow drift is learned, and incidents are not.
 - **How do you avoid alert fatigue?** Cooldown, escalation-only repeats, incident grouping, recovery alerts, and SNS only for HIGH+.
-- **How do you know it works?** 10 automated tests plus a reproducible benchmark (`python -m scripts.evaluate`).
+- **How do you know it works?** 11 automated tests plus a reproducible benchmark (`python -m scripts.evaluate`).
 - **Limitations?** It detects error-rate anomalies, not sequence or semantic ones. The benchmark is synthetic so far. Say this confidently; it shows maturity.
