@@ -61,3 +61,52 @@ def test_parser():
     assert p["level"] == "ERROR" and p["msg"] == "payment failed"
     assert parse_line("[worker-3] WARN disk nearly full")["level"] == "WARN"
     assert parse_line("") is None
+
+
+def test_recovery_alert_closes_incident():
+    det = make()
+    feed(det, 0, 40, 20, err_every=25)
+    incident = feed(det, 40, 15, 20, err_every=2)
+    after = feed(det, 55, 40, 20, err_every=25)  # back to normal; window drains, then recovery
+    recoveries = [a for a in after if a.kind == "recovery"]
+    assert len(recoveries) == 1
+    rec = recoveries[0]
+    assert rec.incident_id == incident[0].incident_id
+    assert rec.severity == max((a.severity for a in incident), key=["LOW", "MEDIUM", "HIGH", "CRITICAL"].index)
+    assert "Recovered" in rec.message
+    # a fresh incident after recovery fires immediately, with a new incident id
+    again = feed(det, 95, 10, 20, err_every=2)
+    assert again and again[0].kind == "anomaly" and again[0].incident_id != rec.incident_id
+
+
+def test_alert_has_message_and_detection_lag():
+    det = make()
+    feed(det, 0, 40, 20, err_every=25)
+    alert = feed(det, 40, 15, 20, err_every=2)[0]
+    assert alert.kind == "anomaly"
+    assert "Error rate" in alert.message and "normal" in alert.message
+    assert alert.detection_lag_ms is not None and alert.detection_lag_ms < 1000
+
+
+def test_to_epoch():
+    from detector.parser import to_epoch
+    assert to_epoch("2026-09-28 10:00:03,120") is not None
+    assert to_epoch("garbage") is None and to_epoch(None) is None
+
+
+def test_frequent_incidents_do_not_poison_baseline():
+    # Incidents every 50 s used to drag the baseline up until later ones went unseen.
+    from scripts.evaluate import simulate
+    incidents, false_alarms = simulate(alpha=0.02, adapt_z=2.0, every=50, seed=0, duration=1200)
+    detected = sum(i[2] is not None for i in incidents)
+    assert detected >= 0.9 * len(incidents)
+    assert false_alarms == 0
+
+
+def test_warmup_ignores_short_burst():
+    det = AnomalyDetector(window_sec=5, warmup_sec=30, min_events=10, cooldown_sec=5)
+    feed(det, 0, 20, 20, err_every=25)   # normal
+    feed(det, 20, 6, 20, err_every=2)    # burst inside warm-up
+    feed(det, 26, 10, 20, err_every=25)  # normal again, warm-up ends
+    assert not det.warming_up
+    assert det.mean < 0.1
