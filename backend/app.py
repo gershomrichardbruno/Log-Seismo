@@ -98,4 +98,6 @@ async def ws_endpoint(ws: WebSocket):
         hub.clients.discard(ws)
 
 
-app.mount("/", StaticFiles(directory=Path(__file__).parent.parent / "frontend", html=True), name="frontend")
+frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if frontend_dist.is_dir():
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

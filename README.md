@@ -15,7 +15,7 @@ engine.py            60 s sliding window → error rate
                      z = (rate − baseline) / std → LOW / MEDIUM / HIGH / CRITICAL
    ▼
 backend/app.py       FastAPI; WebSocket /ws + REST polling fallback
-   ├──► frontend/index.html   live chart + alert feed
+   ├──► frontend/             React + Vite live dashboard
    └──► aws_publisher.py      CloudWatch Logs (all alerts), SNS (HIGH and above)
 ```
 
@@ -35,11 +35,26 @@ Terminal 1, fake log traffic with an incident every 2 minutes:
 python -m generator.log_generator --out logs/app.log --burst-every 120
 ```
 
-Terminal 2, server and dashboard:
+Terminal 2, build the dashboard and start the server:
 ```bash
+cd frontend
+npm install
+npm run build
+cd ..
 uvicorn backend.app:app --reload
 ```
 Open http://localhost:8000. The baseline takes about a minute to learn, then the first incident appears as an alert.
+
+For frontend development with Vite hot reload, run the API server in one terminal:
+```bash
+uvicorn backend.app:app --reload
+```
+Then run Vite in another terminal:
+```bash
+cd frontend
+npm run dev
+```
+Open the Vite URL shown in the terminal. REST and WebSocket requests are proxied to the API server on port 8000.
 
 Detection only, no web server:
 ```bash
@@ -70,7 +85,8 @@ detector/engine.py         sliding window, baseline, severity
 detector/pipeline.py       glue + terminal mode
 backend/app.py             FastAPI, WebSocket, REST
 backend/aws_publisher.py   CloudWatch + SNS
-frontend/index.html        dashboard
+frontend/index.html        Vite HTML shell
+frontend/src/              React dashboard and styles
 tests/                     pytest suite for the engine
 docs/ALERT_SCHEMA.md       message formats shared by both halves
 ```
