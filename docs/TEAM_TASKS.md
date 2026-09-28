@@ -1,12 +1,12 @@
 # Tasks for the remaining time
 
-Everything in the minimum requirements already works on branch `feature/react-dashboard`. What's left is **making the AWS part real** and **preparing the pitch and demo**.
+Everything in the minimum requirements already works on branch `feature/react-dashboard`. What's left is **making the AWS part real**, **a couple of dev upgrades**, and **preparing the pitch and demo**.
 
-First, everyone: pull the branch and run the project once (README → "Run it").
+First, developers: pull the branch and run the project once (README → "Run it").
 
 ---
 
-## Hannah: AWS live + dashboard alerts (uses Claude Pro)
+## Robert: AWS live + dashboard alerts
 
 1. **SNS + CloudWatch live (about 30 min).** This makes the requirement "push alerts to AWS CloudWatch Logs or SNS" provable on stage.
    - In the AWS console, region ap-south-1:
@@ -15,25 +15,37 @@ First, everyone: pull the branch and run the project once (README → "Run it").
      3. Create an IAM user with `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents` and `sns:Publish`.
      4. Run `aws configure` with its keys.
    - In `.env`: `AWS_ENABLED=true`, `SNS_TOPIC_ARN=<topic arn>`.
-   - Run the demo. Screenshot the SNS email and the CloudWatch log group `/log-anomaly-detector/alerts` for the slides.
+   - Run the demo. Screenshot the SNS email and the CloudWatch log group `/log-anomaly-detector/alerts`, and send them to the pitch team.
    - Never commit `.env` or keys (they're already in `.gitignore`).
-2. **Browser notification + sound for HIGH/CRITICAL (about 20 min, optional).** Paste into Claude:
-   > In this repo, `frontend/src/hooks/useLiveFeed.js` receives alerts over WebSocket. Add a desktop browser notification (Notification API, ask permission on first click) and a short beep (Web Audio API, no audio files) when a fresh alert with kind "anomaly" and severity HIGH or CRITICAL arrives. Keep it in a small new hook `useAlertNotifications.js` used from `App.jsx`. Don't change the alert schema.
-   - Then `cd frontend && npm run build` and check it in the browser.
+2. **Browser notification + sound for HIGH/CRITICAL (about 20 min, optional).** In `frontend/src/hooks/useLiveFeed.js`, when a fresh alert with kind "anomaly" and severity HIGH or CRITICAL arrives, show a desktop notification (Notification API, ask permission on first click) and play a short beep (Web Audio API). Put this in a new hook `useAlertNotifications.js` used from `App.jsx`, then `cd frontend && npm run build`.
 3. **Stand-by on stage:** show the SNS email arriving on your phone during the demo.
 
-## Robert: pitch deck + demo safety net
+## Hannah: detector and dev upgrades (uses Claude Pro)
 
-1. **Slides (about 40 min).** Build 7 slides from `docs/PITCH.md`. Put the architecture diagram on slide 3 and the results table on slide 6. For the chart and feed, take screenshots from http://localhost:8000 while an incident is showing.
+Work on branch `feature/detection`. For each task, paste the prompt into Claude, review the diff, and run `pytest` and `python -m scripts.evaluate` before committing. Don't change existing alert fields; only add new ones, and document them in `docs/ALERT_SCHEMA.md`.
+
+1. **Top error signatures in every alert (about 25 min).** This makes the explanation say *"DB connection timeout ×45"* instead of just a rate.
+   > In this repo, `detector/engine.py` builds an `Alert` with `sample_lines`. Add a field `top_errors: list` holding the 3 most frequent error messages in the current window as `{"signature": str, "count": int}`. Normalise messages into a signature by stripping the timestamp and level and replacing numbers, hex IDs and quoted values with `<*>` (e.g. "DB connection timeout after 2011ms" → "DB connection timeout after <*>ms"). Keep the per-window counts updated incrementally in `add`/`_evict` (no full rescan per tick). Append the top signature to the alert `message`. Add pytest tests. Then show `top_errors` in `frontend/src/components/AlertFeed.jsx` in the expanded detail as "signature ×count", and update `docs/ALERT_SCHEMA.md`.
+2. **Log-volume drop detection: "silent service" (about 30 min).** A crashed service often stops logging instead of logging errors.
+   > In `detector/engine.py`, add a second signal: lines per second in the window. Learn its baseline the same way as the error rate (robust median/MAD warm-up, then EWMA only from clearly normal ticks). When volume falls more than 4 std devs below its baseline, and to under 50% of it, raise an anomaly alert with a new field `signal: "volume_drop"`; existing error-rate alerts get `signal: "error_rate"`. Reuse the incident, cooldown and recovery logic. Add pytest tests (normal traffic → no alert; traffic drops to 10% → alert; traffic returns → recovery). Add a `--pause-every` option to `generator/log_generator.py` that stops writing for 20 s. Show the signal in `AlertFeed.jsx`. Update `docs/ALERT_SCHEMA.md` and the benchmark in `scripts/evaluate.py`.
+3. **One-command run with Docker (about 15 min, if time allows).**
+   > Add a multi-stage `Dockerfile` (a Node stage builds `frontend/dist`; a Python 3.12 slim stage runs `uvicorn backend.app:app --host 0.0.0.0`) and a `docker-compose.yml` with two services, `app` and `generator`, sharing a `logs` volume. Pass AWS settings from `.env`. Add a "Run with Docker" section to the README.
+
+If task 2 lands, tell the pitch team to move "log-volume drops" from "What's next" to "How it works" in `docs/PITCH.md`.
+
+## Pitch team (2 members): slides + demo safety net
+
+1. **Slides (about 40 min).** Build 7 slides from `docs/PITCH.md`. Put the architecture diagram on slide 3 and the results table on slide 6. Get dashboard screenshots taken while an incident is showing, and the AWS screenshots from Robert.
 2. **Backup video (about 10 min).** Screen-record one full incident cycle: calm → alerts escalate → recovery. If the live demo breaks on stage, play this.
-3. **Benchmark screenshot.** Run `python -m scripts.evaluate` and screenshot the output for the results slide.
+3. **Benchmark screenshot.** Get the output of `python -m scripts.evaluate` for the results slide.
 4. **Rehearse** the demo script in `docs/PITCH.md` once with a timer. Target 5 minutes.
 
 ## You: integration + technical Q&A
 
-1. Push the branch, open the PR, and merge into `main` once Hannah's AWS check passes.
-2. Own the demo machine: start the generator and server 2+ minutes before presenting.
-3. Read `docs/WORKLOG.md`. You answer the technical questions: baseline poisoning fix, median/MAD warm-up, why not deep learning.
+1. Push the branch, open the PR, and merge into `main` once Robert's AWS check passes.
+2. Review and merge Hannah's `feature/detection` PRs. Rebuild the frontend after merging (`npm run build`).
+3. Own the demo machine: start the generator and server 2+ minutes before presenting.
+4. Read `docs/WORKLOG.md`. You answer the technical questions: baseline poisoning fix, median/MAD warm-up, why not deep learning.
 
 ## Merge order
-Hannah's notification hook (if done) → `feature/react-dashboard` → `main`. Slides live outside the repo.
+`feature/react-dashboard` → `main` first. Then Robert's notification hook and Hannah's `feature/detection` PRs, one at a time, rerunning `pytest` after each. Freeze `main` at least 20 minutes before presenting. Slides live outside the repo.
