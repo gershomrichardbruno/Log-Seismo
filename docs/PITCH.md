@@ -7,7 +7,7 @@ Target length: about 5 minutes, then Q&A. Seven slides plus a live demo.
 ## Slide 1: Title
 **Log-Seismo** — a seismograph for your logs.
 Real-time log anomaly detection that raises an explained alert within seconds of errors spiking.
-*Team: [you] · Hannah · Robert · [pitch member 1] · [pitch member 2]*
+*Team: Hannah Bijumone (lead) · Gershom Richard Bruno · Rithika S · Caroline Mireya Regi · Aira Salish*
 
 ## Slide 2: The problem
 - Production systems write thousands of log lines a minute. Outages start as a rise in errors that nobody is watching.

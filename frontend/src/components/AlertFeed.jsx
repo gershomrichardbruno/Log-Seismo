@@ -1,75 +1,110 @@
-import { SEVERITIES, clock, ms, pct, sevLabel } from "../format.js";
+import { useState } from "react";
+import { SEVERITIES, clock, ms, pct, sevLabel, sevRank } from "../format.js";
+import { IconChevron, IconSearch } from "./Icons.jsx";
 
-function AlertItem({ a, acked, onAck }) {
+export function SeverityBadge({ alert }) {
+  const recovery = alert.kind === "recovery";
+  const cls = recovery ? "ok" : alert.severity.toLowerCase();
+  return <span className={`badge ${cls}`}><i />{recovery ? "Recovered" : sevLabel(alert.severity)}</span>;
+}
+
+function AlertRow({ a, acked, onAck }) {
+  const [open, setOpen] = useState(false);
   const recovery = a.kind === "recovery";
-  const color = recovery ? "var(--ok)" : `var(--${a.severity.toLowerCase()})`;
   const delivery = a.receivedAt ? (a.receivedAt - a.timestamp) * 1000 : null;
   return (
-    <li className={`alert${a.fresh ? " fresh" : ""}${acked ? " acked" : ""}`} style={{ "--c": color }}>
-      <details>
-        <summary>
-          <span className="sev">{recovery ? "Recovered" : sevLabel(a.severity)}</span>
-          <span className="time">{clock(a.timestamp)}</span>
-          <span className="nums">
-            {recovery
-              ? a.message
-              : <>{pct(a.error_rate)} errors, normally {pct(a.baseline)} <span className="z">({a.errors} of {a.total} lines)</span></>}
-          </span>
-          <span className="z">{recovery ? "" : `z = ${a.z_score}`}</span>
-          {!recovery && (
-            <button
-              type="button"
-              className="ack"
-              onClick={(e) => { e.preventDefault(); onAck(a.id); }}
-              disabled={acked}
-            >
-              {acked ? "Acked" : "Ack"}
-            </button>
-          )}
-        </summary>
-        <div className="detail">
+    <li className={`row${a.fresh ? " fresh" : ""}${acked ? " acked" : ""}`}>
+      <button type="button" className="row-main" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="c-sev"><SeverityBadge alert={a} /></span>
+        <span className="c-time mono">{clock(a.timestamp)}</span>
+        <span className="c-msg">{recovery ? a.message : `Error rate ${pct(a.error_rate)} vs normal ${pct(a.baseline)}`}</span>
+        <span className="c-num mono">{recovery ? "" : `${a.errors}/${a.total}`}</span>
+        <span className="c-num mono">{recovery ? "" : `z ${a.z_score.toFixed(1)}`}</span>
+        <span className="c-num mono">{ms(a.detection_lag_ms)}</span>
+        <IconChevron className={`chev${open ? " open" : ""}`} />
+      </button>
+      {!recovery && (
+        <button type="button" className="btn-ghost c-ack" onClick={() => onAck(a.id)} disabled={acked}>
+          {acked ? "Acknowledged" : "Acknowledge"}
+        </button>
+      )}
+      {open && (
+        <div className="row-detail">
           <p>{a.message}</p>
-          <p className="lat">
-            Detection lag {ms(a.detection_lag_ms)} · Delivery to dashboard {ms(delivery)}
-            {a.incident_id && <> · Incident <code>{a.incident_id}</code></>}
-          </p>
-          {a.sample_lines?.length > 0 && <pre>{a.sample_lines.join("\n")}</pre>}
+          <dl className="facts">
+            <div><dt>Incident</dt><dd className="mono">{a.incident_id || "–"}</dd></div>
+            <div><dt>Detection lag</dt><dd className="mono">{ms(a.detection_lag_ms)}</dd></div>
+            <div><dt>Delivery</dt><dd className="mono">{ms(delivery)}</dd></div>
+            <div><dt>Window</dt><dd className="mono">{a.window_sec}s</dd></div>
+          </dl>
+          {a.sample_lines?.length > 0 && (
+            <>
+              <h4>Sample error lines</h4>
+              <pre className="log">{a.sample_lines.join("\n")}</pre>
+            </>
+          )}
         </div>
-      </details>
+      )}
     </li>
   );
 }
 
-export default function AlertFeed({ alerts, filter, setFilter, acked, onAck }) {
-  const shown = alerts.filter(
-    (a) => a.kind === "recovery" ? filter.showRecovery : SEVERITIES.indexOf(a.severity) >= SEVERITIES.indexOf(filter.minSeverity)
-  );
+const FILTERS = [
+  { key: "ALL", label: "All" },
+  { key: "MEDIUM", label: "Medium+" },
+  { key: "HIGH", label: "High+" },
+  { key: "CRITICAL", label: "Critical" },
+];
+
+export default function AlertFeed({ alerts, acked, onAck }) {
+  const [min, setMin] = useState("ALL");
+  const [showRecovery, setShowRecovery] = useState(true);
+  const [q, setQ] = useState("");
+  const query = q.trim().toLowerCase();
+  const shown = alerts.filter((a) => {
+    if (a.kind === "recovery" ? !showRecovery : min !== "ALL" && sevRank(a.severity) < sevRank(min)) return false;
+    if (!query) return true;
+    return (a.message + " " + (a.sample_lines || []).join(" ")).toLowerCase().includes(query);
+  });
+  const counts = Object.fromEntries(SEVERITIES.map((s) => [s, alerts.filter((a) => a.kind !== "recovery" && a.severity === s).length]));
+
   return (
-    <section>
-      <div className="feed-head">
-        <h2>Alerts <span>{shown.length}{shown.length !== alerts.length ? ` of ${alerts.length}` : ""}</span></h2>
-        <div className="filters" role="group" aria-label="Filter alerts">
-          <label>
-            Minimum severity{" "}
-            <select value={filter.minSeverity} onChange={(e) => setFilter({ ...filter, minSeverity: e.target.value })}>
-              {SEVERITIES.map((s) => <option key={s} value={s}>{sevLabel(s)}</option>)}
-            </select>
+    <section className="card" aria-label="Alert feed">
+      <div className="card-head wrap">
+        <div>
+          <h2>Alerts <span className="count">{alerts.length}</span></h2>
+          <p className="muted">
+            {SEVERITIES.slice().reverse().map((s) => (
+              <span key={s} className="mini-count"><i className={`dot ${s.toLowerCase()}`} />{counts[s]} {sevLabel(s)}</span>
+            ))}
+          </p>
+        </div>
+        <div className="toolbar">
+          <label className="search">
+            <IconSearch />
+            <input type="search" placeholder="Search messages and log lines" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search alerts" />
           </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={filter.showRecovery}
-              onChange={(e) => setFilter({ ...filter, showRecovery: e.target.checked })}
-            />{" "}
-            Show recoveries
+          <div className="segmented" role="group" aria-label="Minimum severity">
+            {FILTERS.map((f) => (
+              <button key={f.key} type="button" aria-pressed={min === f.key} onClick={() => setMin(f.key)}>{f.label}</button>
+            ))}
+          </div>
+          <label className="switch">
+            <input type="checkbox" checked={showRecovery} onChange={(e) => setShowRecovery(e.target.checked)} />
+            <span>Recoveries</span>
           </label>
         </div>
       </div>
-      <ul id="feed">
+      <div className="table-head" aria-hidden="true">
+        <span>Severity</span><span>Time</span><span>Summary</span><span>Errors</span><span>Score</span><span>Lag</span><span />
+      </div>
+      <ul className="rows">
         {shown.length === 0 && (
-          <li className="empty">No anomalies yet. Alerts appear here the moment the error rate breaks from its normal range.</li>
+          <li className="empty">
+            {alerts.length ? "No alerts match these filters." : "No anomalies yet. Alerts appear here the moment the error rate breaks from its normal range."}
+          </li>
         )}
-        {shown.map((a) => <AlertItem key={a.id} a={a} acked={acked.has(a.id)} onAck={onAck} />)}
+        {shown.map((a) => <AlertRow key={a.id} a={a} acked={acked.has(a.id)} onAck={onAck} />)}
       </ul>
     </section>
   );
